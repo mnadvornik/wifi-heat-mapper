@@ -1,6 +1,6 @@
 import PySimpleGUI as sg
 import os.path
-from wifi_heat_mapper.misc import run_iperf, run_speedtest, process_iw, load_json, save_json, verify_iperf
+from wifi_heat_mapper.misc import run_iperf, run_speedtest, process_wireless_metrics, load_json, save_json, verify_iperf
 from wifi_heat_mapper.misc import get_property_from, SpeedTestMode
 from wifi_heat_mapper.graph import generate_graph
 from wifi_heat_mapper.debugger import log_arguments
@@ -33,6 +33,7 @@ def start_gui(floor_map, iperf_server, config_file, output_file=None):
     Returns:
         None
     """
+
     if os.path.isfile(config_file):
         config_file = os.path.abspath(config_file)
         data = load_json(config_file)
@@ -47,7 +48,9 @@ def start_gui(floor_map, iperf_server, config_file, output_file=None):
             if libre_speed_server_list == "":
                 libre_speed_server_list = None
 
-            connected_ssid = process_iw(target_interface)["ssid"]
+            wireless_metrics = process_wireless_metrics(target_interface)
+
+            connected_ssid = wireless_metrics["ssid"]
             logging.debug("SSID Connected: {0}".format(connected_ssid))
             if connected_ssid != ssid:
                 print("Configuration file is for {0} but user connected to {1}"
@@ -63,6 +66,9 @@ def start_gui(floor_map, iperf_server, config_file, output_file=None):
         raise ConfigurationError("Missing configuration file")
 
     modes = get_property_from(configuration, "modes")
+
+    if iperf_server is None and wireless_metrics["gateway"] is not None:
+        iperf_server = wireless_metrics["gateway"]
 
     if len(set(iperf3_modes).intersection(set(modes))) > 0 and iperf_server is None:
         print("Please specify your iperf3 server IP address.")
@@ -199,7 +205,7 @@ def start_gui(floor_map, iperf_server, config_file, output_file=None):
         if event == "Benchmark":
             if current_selection is not None:
 
-                iw = process_iw(target_interface)
+                iw = process_wireless_metrics(target_interface)
                 if iw["ssid"] != ssid:
                     sg.popup_error("SSID mismatch!")
                     print("SSID mismatch!")

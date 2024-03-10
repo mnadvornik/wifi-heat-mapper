@@ -8,6 +8,7 @@ import iperf3
 import importlib
 from enum import IntEnum
 import os
+import platform
 import logging
 
 
@@ -149,7 +150,7 @@ def verify_interface(target_interface):
         exit(1)
 
 
-def process_iw(target_interface):
+def process_wireless_metrics(target_interface):
     """Get metrics from a wireless interface.
 
     Args:
@@ -160,6 +161,13 @@ def process_iw(target_interface):
         dict: A dictionary containing the metrics and
         their values as corresponding (key, value) pairs.
     """
+    if platform.system() == "Darwin":
+        return process_airport(target_interface)
+    elif platform.system() == "Linux":
+        return process_iw(target_interface)
+ 
+
+def process_iw(target_interface):
     verify_interface(target_interface)
 
     try:
@@ -210,6 +218,55 @@ def process_iw(target_interface):
             results["signal_strength"] = int(re.findall(r"(?<=Signal level=)(.*)(?= dBm)", iwconfig)[0])
     except IndexError:
         raise ParseError("Unable to parse iw.") from None
+    return results
+
+def parse_osx_wifi_info():
+    wdutil_output = get_application_output(["sudo wdutil info"], shell=True, timeout=10)
+
+    wifi_section = False
+    wifi_info = {}
+
+    for line in wdutil_output.split('\n'):
+        if line.strip() == 'WIFI':
+            wifi_section = True
+        elif line.strip() == 'BLUETOOTH':
+            break
+        elif wifi_section:
+            if ':' in line:
+                key, value = line.split(':', 1)
+                key = key.strip()
+                value = value.strip()
+                if key:  # Make sure key is not empty
+                    wifi_info[key] = value
+
+    # Fix values
+    wifi_info['MAC Address'] = re.match(r'^(.*?) \(hw=', wifi_info['MAC Address']).group(1)
+
+    return wifi_info
+
+
+def process_airport(target_interface):
+    results = {}
+
+    wifi_info = parse_osx_wifi_info()
+    print(wifi_info)
+    results["interface"] = wifi_info['Interface Name']
+    results["interface_mac"] = wifi_info['MAC Address']
+
+    if not verify_mac(results["interface_mac"]):
+        print("The interface {0} has an invalid MAC address".format(target_interface))
+        exit(1)
+    results["channel_frequency"] = None
+
+    results["ip"] = wifi_info["IPv4 Address"]
+    results["gateway"] = wifi_info["IPv4 Router"]
+
+    results["channel"] = wifi_info["Channel"]
+    results["ssid"] = wifi_info["SSID"]
+    results["ssid_mac"] = wifi_info["BSSID"]
+    results["signal_strength"] = wifi_info["RSSI"]
+    results["signal_noise"] = wifi_info["Noise"]
+
     return results
 
 
